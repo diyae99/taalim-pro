@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "./Button";
 import { Card } from "./Card";
-import { generateExamPdf } from "../lib/pdf";
+import { generateAiStudentPdf, generateExamPdf } from "../lib/pdf";
 import { downloadDataUrl } from "../lib/storage";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
@@ -13,7 +13,11 @@ export const ExamCard = ({ exam }: { exam: Exam }) => {
 
   const download = () => {
     if (!user) return;
-    generateExamPdf(exam, user);
+    if (exam.aiGenerated) {
+      generateAiStudentPdf(exam.aiGenerated, user);
+    } else {
+      generateExamPdf(exam, user);
+    }
     showToast("PDF personnalisé généré avec succès.");
   };
 

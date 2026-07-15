@@ -1,3 +1,5 @@
+import type { GeneratedExamResponse } from "./aiExam";
+
 export type Role = "admin" | "client";
 export type UserStatus = "pending" | "active" | "suspended";
 export type Level = "PS" | "MS" | "GS" | "CP" | "CE1" | "CE2" | "CM1" | "CM2" | "CE6";
@@ -35,6 +37,7 @@ export interface Exam {
     fileName: string;
     dataUrl: string;
   };
+  aiGenerated?: GeneratedExamResponse;
   active: boolean;
   createdAt: string;
 }
