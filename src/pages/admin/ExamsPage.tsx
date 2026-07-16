@@ -5,7 +5,7 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { adminUser } from "../../data/seed";
 import { generateAiCorrectionPdf, generateAiStudentPdf } from "../../lib/pdf";
-import { downloadDataUrl, getExams, saveExams } from "../../lib/storage";
+import { getExams, saveExams } from "../../lib/storage";
 import { useToast } from "../../context/ToastContext";
 
 export const ExamsPage = () => {
@@ -33,12 +33,10 @@ export const ExamsPage = () => {
                 <p className="mt-2 text-sm text-stone-600">{exam.level} · {exam.semester} · {exam.subject} · {exam.duration}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${exam.active ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-700"}`}>{exam.active ? "Actif" : "Inactif"}</span>
-                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${exam.uploadedPdf ? "bg-brand-100 text-brand-800" : "bg-amber-100 text-amber-800"}`}>{exam.uploadedPdf ? `PDF : ${exam.uploadedPdf.fileName}` : "PDF non disponible"}</span>
                   {exam.aiGenerated && <span className="inline-flex rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">Généré par IA</span>}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                {exam.uploadedPdf && <Button onClick={() => downloadDataUrl(exam.uploadedPdf!.dataUrl, exam.uploadedPdf!.fileName)}>Télécharger PDF</Button>}
                 {exam.aiGenerated && <Button variant="secondary" onClick={() => generateAiStudentPdf(exam.aiGenerated!, adminUser)}>PDF élève IA</Button>}
                 {exam.aiGenerated && <Button variant="secondary" onClick={() => generateAiCorrectionPdf(exam.aiGenerated!, adminUser)}>Correction IA</Button>}
                 <Link to={`/admin/exams/edit/${exam.id}`}><Button variant="secondary">Modifier</Button></Link>

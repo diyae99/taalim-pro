@@ -10,8 +10,10 @@ export type GeneratedQuestionType =
   | "matching";
 
 export interface GenerateExamRequest {
+  title: string;
   subject: string;
   level: string;
+  semester: string;
   language: ExamLanguage;
   difficulty: ExamDifficulty;
   examType: string;

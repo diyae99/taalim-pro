@@ -33,10 +33,6 @@ export interface Exam {
   bareme: string;
   content: string;
   correction?: string;
-  uploadedPdf?: {
-    fileName: string;
-    dataUrl: string;
-  };
   aiGenerated?: GeneratedExamResponse;
   active: boolean;
   createdAt: string;

@@ -10,7 +10,7 @@ Taalim Pro is a React/Vite SaaS prototype for schools and teachers to manage and
 - Client profiles with school identity, logo, niveau, and matière.
 - Admin user management with activation, suspension, password regeneration, and status filters.
 - Admin exam management with create, edit, delete, activate/deactivate.
-- Manual exam entry, original PDF upload/download, and existing personalized PDF export.
+- AI-assisted exam creation and existing personalized PDF export.
 - AI exam generation through a server-side Vercel Function.
 - Separate AI exports for student PDF and teacher correction PDF.
 - Protected client and admin routes.

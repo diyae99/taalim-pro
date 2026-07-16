@@ -7,8 +7,10 @@ const MAX_BODY_BYTES = 12000;
 const model = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 
 const requestSchema = z.object({
+  title: z.string().trim().min(1).max(100),
   subject: z.string().trim().min(1).max(100),
   level: z.string().trim().min(1).max(100),
+  semester: z.string().trim().min(1).max(100),
   language: z.enum(["fr", "ar", "en"]),
   difficulty: z.enum(["facile", "moyen", "difficile"]),
   examType: z.string().trim().min(1).max(100),
@@ -112,8 +114,10 @@ The sum of all question scores must equal totalScore.
 The number of generated questions must equal numberOfQuestions.`;
 
 const buildPrompt = (input: ExamRequest) => `Create a school exam with these parameters:
+Requested title: ${input.title}
 Subject: ${input.subject}
 Level: ${input.level}
+Semester: ${input.semester}
 Language: ${input.language}
 Difficulty: ${input.difficulty}
 Exam type: ${input.examType}

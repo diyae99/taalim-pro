@@ -2,7 +2,6 @@ import { Link } from "react-router-dom";
 import { Button } from "./Button";
 import { Card } from "./Card";
 import { generateAiStudentPdf, generateExamPdf } from "../lib/pdf";
-import { downloadDataUrl } from "../lib/storage";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import type { Exam } from "../types";
@@ -31,11 +30,6 @@ export const ExamCard = ({ exam }: { exam: Exam }) => {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to={`/dashboard/exams/preview/${exam.id}`}><Button variant="secondary">Aperçu</Button></Link>
-          {exam.uploadedPdf ? (
-            <Button onClick={() => downloadDataUrl(exam.uploadedPdf!.dataUrl, exam.uploadedPdf!.fileName)}>Télécharger PDF</Button>
-          ) : (
-            <Button variant="secondary" disabled>PDF non disponible</Button>
-          )}
           <Button variant="secondary" onClick={download}>PDF personnalisé</Button>
         </div>
       </div>
