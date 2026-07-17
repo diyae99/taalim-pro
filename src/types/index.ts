@@ -1,10 +1,9 @@
-import type { GeneratedExamResponse } from "./aiExam";
-
 export type Role = "admin" | "client";
 export type UserStatus = "pending" | "active" | "suspended";
 export type Level = "PS" | "MS" | "GS" | "CP" | "CE1" | "CE2" | "CM1" | "CM2" | "CE6";
 export type Semester = "Premier semestre" | "Deuxième semestre";
 export type Subject = "Français" | "Arabe" | "Mathématiques" | "Activité scientifique" | "Éducation islamique";
+export type ExamLanguage = "fr" | "ar" | "en";
 
 export interface User {
   id: string;
@@ -29,11 +28,21 @@ export interface Exam {
   semester: Semester;
   subject: Subject;
   type: string;
-  duration: string;
-  bareme: string;
-  content: string;
+  language?: ExamLanguage;
+  themes?: string[];
+  instructions?: string;
+  filePath?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: "application/pdf";
+  replaceLegacyHeader?: boolean;
+  headerHeightRatio?: number;
+  applyHeaderToAllPages?: boolean;
+  createdBy?: string;
+  duration?: string;
+  bareme?: string;
+  content?: string;
   correction?: string;
-  aiGenerated?: GeneratedExamResponse;
   active: boolean;
   createdAt: string;
 }
