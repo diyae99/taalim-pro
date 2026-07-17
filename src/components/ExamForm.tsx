@@ -1,34 +1,19 @@
-import { useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import { useRef, useState } from "react";
+import type { DragEvent, FormEvent, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "./Button";
 import { allLevels, semesters, subjects } from "../data/options";
-import { generateExamWithAi } from "../lib/examAi";
-import { getExams, makeId, saveExams } from "../lib/storage";
+import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
-import type { Exam, Level, Semester, Subject } from "../types";
-import type { ExamDifficulty, ExamLanguage, GeneratedExamResponse, GeneratedQuestionType } from "../types/aiExam";
+import { createExamFilePath, deleteExamFile, formatFileSize, saveExamFile } from "../lib/examFiles";
+import { getExams, makeId, saveExams } from "../lib/storage";
+import type { Exam, ExamLanguage, Level, Semester, Subject } from "../types";
 
+const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const languages: { value: ExamLanguage; label: string }[] = [
   { value: "fr", label: "Français" },
   { value: "ar", label: "Arabe" },
   { value: "en", label: "Anglais" }
-];
-
-const difficulties: { value: ExamDifficulty; label: string }[] = [
-  { value: "facile", label: "Facile" },
-  { value: "moyen", label: "Moyen" },
-  { value: "difficile", label: "Difficile" }
-];
-
-const questionTypes: { value: GeneratedQuestionType; label: string }[] = [
-  { value: "multiple_choice", label: "Choix multiple" },
-  { value: "true_false", label: "Vrai/Faux" },
-  { value: "short_answer", label: "Réponse courte" },
-  { value: "long_answer", label: "Réponse longue" },
-  { value: "exercise", label: "Exercice" },
-  { value: "fill_blank", label: "Texte à trous" },
-  { value: "matching", label: "Association" }
 ];
 
 interface ExamFormState {
@@ -38,27 +23,14 @@ interface ExamFormState {
   subject: Subject;
   semester: Semester;
   language: ExamLanguage;
-  difficulty: ExamDifficulty;
-  numberOfQuestions: number;
-  durationMinutes: number;
-  totalScore: number;
-  topics: string;
-  questionTypes: GeneratedQuestionType[];
-  additionalInstructions: string;
-  active: boolean;
+  themes: string;
+  instructions: string;
+  replaceLegacyHeader: boolean;
+  headerHeightRatio: number;
+  applyHeaderToAllPages: boolean;
 }
 
-type FormErrors = Partial<Record<keyof ExamFormState | "questionTypes", string>>;
-
-const durationToMinutes = (value: string) => {
-  const match = value.match(/\d+/);
-  return match ? Number(match[0]) : 60;
-};
-
-const scoreToNumber = (value: string) => {
-  const match = value.match(/\d+/);
-  return match ? Number(match[0]) : 20;
-};
+type FormErrors = Partial<Record<keyof ExamFormState | "file", string>>;
 
 const initialState = (exam?: Exam): ExamFormState => ({
   title: exam?.title ?? "",
@@ -66,38 +38,32 @@ const initialState = (exam?: Exam): ExamFormState => ({
   level: exam?.level ?? "CP",
   subject: exam?.subject ?? "Mathématiques",
   semester: exam?.semester ?? "Premier semestre",
-  language: exam?.aiGenerated?.exam.language ?? "fr",
-  difficulty: "moyen",
-  numberOfQuestions: exam?.aiGenerated?.exam.sections.flatMap((section) => section.questions).length ?? 6,
-  durationMinutes: exam ? durationToMinutes(exam.duration) : 60,
-  totalScore: exam ? scoreToNumber(exam.bareme) : 20,
-  topics: "",
-  questionTypes: ["exercise", "short_answer"],
-  additionalInstructions: "",
-  active: exam?.active ?? true
+  language: exam?.language ?? "fr",
+  themes: exam?.themes?.join(", ") ?? "",
+  instructions: exam?.instructions ?? "",
+  replaceLegacyHeader: exam?.replaceLegacyHeader ?? true,
+  headerHeightRatio: exam?.headerHeightRatio ?? 0.13,
+  applyHeaderToAllPages: exam?.applyHeaderToAllPages ?? false
 });
 
-const generatedExamToContent = (generated: GeneratedExamResponse) => {
-  const instructions = generated.exam.generalInstructions.map((item) => `- ${item}`).join("\n");
-  const sections = generated.exam.sections.map((section) => {
-    const questions = section.questions.map((question) => {
-      const options = question.options.length ? `\n${question.options.map((option) => `   - ${option}`).join("\n")}` : "";
-      return `${question.id}. ${question.statement} (${question.score} pts)${options}`;
-    }).join("\n\n");
-    return `${section.title}\n${section.instructions}\n\n${questions}`;
-  }).join("\n\n");
-  return `Consignes générales\n${instructions}\n\n${sections}`;
+const validatePdf = (file: File) => {
+  if (file.type !== "application/pdf" || !file.name.toLowerCase().endsWith(".pdf")) {
+    return "Le fichier sélectionné doit être au format PDF.";
+  }
+  if (file.size > MAX_PDF_SIZE) return "La taille du fichier dépasse la limite autorisée.";
+  return "";
 };
-
-const generatedExamToCorrection = (generated: GeneratedExamResponse) =>
-  generated.answerKey.map((answer) => `${answer.questionId}. ${answer.expectedAnswer}\nExplication : ${answer.explanation}`).join("\n\n");
 
 export const ExamForm = ({ exam }: { exam?: Exam }) => {
   const [form, setForm] = useState<ExamFormState>(() => initialState(exam));
+  const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [apiError, setApiError] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showToast } = useToast();
 
   const update = <Field extends keyof ExamFormState>(field: Field, value: ExamFormState[Field]) => {
@@ -105,204 +71,157 @@ export const ExamForm = ({ exam }: { exam?: Exam }) => {
     setErrors((current) => ({ ...current, [field]: "" }));
   };
 
-  const toggleQuestionType = (type: GeneratedQuestionType) => {
-    setForm((current) => {
-      const nextTypes = current.questionTypes.includes(type)
-        ? current.questionTypes.filter((item) => item !== type)
-        : [...current.questionTypes, type].slice(0, 10);
-      return { ...current, questionTypes: nextTypes };
-    });
-    setErrors((current) => ({ ...current, questionTypes: "" }));
+  const selectFile = (nextFile?: File) => {
+    if (!nextFile) return;
+    const error = validatePdf(nextFile);
+    setErrors((current) => ({ ...current, file: error }));
+    setFile(error ? null : nextFile);
+    if (fileInput.current) fileInput.current.value = "";
+  };
+
+  const onDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    selectFile(event.dataTransfer.files[0]);
   };
 
   const validate = () => {
     const nextErrors: FormErrors = {};
-    if (!form.title.trim()) nextErrors.title = "Le titre est obligatoire.";
+    if (!form.title.trim()) nextErrors.title = "Le titre de l'examen est obligatoire.";
     if (!form.type.trim()) nextErrors.type = "Le type d'examen est obligatoire.";
     if (!form.level) nextErrors.level = "Le niveau est obligatoire.";
     if (!form.subject) nextErrors.subject = "La matière est obligatoire.";
     if (!form.semester) nextErrors.semester = "Le semestre est obligatoire.";
     if (!form.language) nextErrors.language = "La langue est obligatoire.";
-    if (!form.difficulty) nextErrors.difficulty = "La difficulté est obligatoire.";
-    if (!Number.isInteger(form.numberOfQuestions) || form.numberOfQuestions < 1 || form.numberOfQuestions > 20) {
-      nextErrors.numberOfQuestions = "Choisissez un nombre entre 1 et 20.";
-    }
-    if (!Number.isInteger(form.durationMinutes) || form.durationMinutes < 10 || form.durationMinutes > 240) {
-      nextErrors.durationMinutes = "Choisissez une durée entre 10 et 240 minutes.";
-    }
-    if (!Number.isInteger(form.totalScore) || form.totalScore < 5 || form.totalScore > 100) {
-      nextErrors.totalScore = "Choisissez un barème entre 5 et 100.";
-    }
-    if (form.questionTypes.length === 0) nextErrors.questionTypes = "Sélectionnez au moins un type de question.";
+    if (!form.themes.trim()) nextErrors.themes = "Les thèmes sont obligatoires.";
+    if (!exam?.filePath && !file) nextErrors.file = "Veuillez sélectionner un fichier PDF.";
+    if (file) nextErrors.file = validatePdf(file) || undefined;
     setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
-
-  const saveGeneratedExam = (generated: GeneratedExamResponse) => {
-    const exams = getExams();
-    const payload: Exam = {
-      id: exam?.id ?? makeId("exam"),
-      title: form.title.trim(),
-      level: form.level,
-      semester: form.semester,
-      subject: form.subject,
-      type: form.type.trim(),
-      duration: `${form.durationMinutes} min`,
-      bareme: `${form.totalScore} points`,
-      content: generatedExamToContent(generated),
-      correction: generatedExamToCorrection(generated),
-      aiGenerated: {
-        ...generated,
-        exam: {
-          ...generated.exam,
-          title: form.title.trim(),
-          subject: form.subject,
-          level: form.level,
-          durationMinutes: form.durationMinutes,
-          totalScore: form.totalScore
-        }
-      },
-      active: form.active,
-      createdAt: exam?.createdAt ?? new Date().toISOString()
-    };
-    saveExams(exam ? exams.map((item) => (item.id === exam.id ? payload : item)) : [payload, ...exams]);
+    return !Object.values(nextErrors).some(Boolean);
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    setApiError("");
-    if (!validate()) return;
+    if (isSaving || !validate()) return;
+    setSubmitError("");
+    setIsSaving(true);
 
-    setIsGenerating(true);
+    const exams = getExams();
+    const examId = exam?.id ?? makeId("exam");
+    let uploadedPath: string | undefined;
     try {
-      const generated = await generateExamWithAi({
+      if (file) {
+        uploadedPath = createExamFilePath(examId, file.name);
+        await saveExamFile(uploadedPath, file);
+      }
+      const payload: Exam = {
+        ...exam,
+        id: examId,
         title: form.title.trim(),
-        subject: form.subject,
+        type: form.type.trim(),
         level: form.level,
+        subject: form.subject,
         semester: form.semester,
         language: form.language,
-        difficulty: form.difficulty,
-        examType: form.type.trim(),
-        numberOfQuestions: form.numberOfQuestions,
-        durationMinutes: form.durationMinutes,
-        totalScore: form.totalScore,
-        topics: form.topics.split(",").map((item) => item.trim()).filter(Boolean),
-        questionTypes: form.questionTypes,
-        additionalInstructions: form.additionalInstructions.trim()
-      });
-      saveGeneratedExam(generated);
-      showToast(exam ? "Examen régénéré avec succès." : "Examen généré avec succès.");
+        themes: form.themes.split(",").map((theme) => theme.trim()).filter(Boolean),
+        instructions: form.instructions.trim() || undefined,
+        filePath: uploadedPath ?? exam?.filePath,
+        fileName: file?.name ?? exam?.fileName,
+        fileSize: file?.size ?? exam?.fileSize,
+        mimeType: file ? "application/pdf" : exam?.mimeType,
+        replaceLegacyHeader: form.replaceLegacyHeader,
+        headerHeightRatio: form.headerHeightRatio,
+        applyHeaderToAllPages: form.applyHeaderToAllPages,
+        createdBy: exam?.createdBy ?? user?.id,
+        active: exam?.active ?? true,
+        createdAt: exam?.createdAt ?? new Date().toISOString()
+      };
+      saveExams(exam ? exams.map((item) => item.id === exam.id ? payload : item) : [payload, ...exams]);
+      if (uploadedPath && exam?.filePath) {
+        try {
+          await deleteExamFile(exam.filePath);
+        } catch {
+          showToast("L'examen a été enregistré, mais l'ancien PDF n'a pas pu être supprimé.", "info");
+        }
+      }
+      showToast(exam ? "L'examen a été modifié avec succès." : "L'examen a été ajouté avec succès.");
       navigate("/admin/exams");
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "La génération a échoué. Veuillez réessayer.");
+    } catch {
+      if (uploadedPath) await deleteExamFile(uploadedPath).catch(() => undefined);
+      setSubmitError("Une erreur est survenue pendant l'enregistrement de l'examen.");
     } finally {
-      setIsGenerating(false);
+      setIsSaving(false);
     }
   };
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-6">
       <section className="grid gap-3">
         <h2 className="text-lg font-bold text-brand-900">Informations générales</h2>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Titre de l'examen" error={errors.title}>
-            <input className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.title} onChange={(event) => update("title", event.target.value)} />
-          </Field>
-          <Field label="Type d'examen" error={errors.type}>
-            <input className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.type} onChange={(event) => update("type", event.target.value)} />
-          </Field>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Niveau" error={errors.level}>
-            <select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.level} onChange={(event) => update("level", event.target.value as Level)}>
-              {allLevels.map((level) => <option key={level} value={level}>{level}</option>)}
-            </select>
-          </Field>
-          <Field label="Matière" error={errors.subject}>
-            <select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.subject} onChange={(event) => update("subject", event.target.value as Subject)}>
-              {subjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Semestre" error={errors.semester}>
-            <select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.semester} onChange={(event) => update("semester", event.target.value as Semester)}>
-              {semesters.map((semester) => <option key={semester} value={semester}>{semester}</option>)}
-            </select>
-          </Field>
-          <Field label="Langue" error={errors.language}>
-            <select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.language} onChange={(event) => update("language", event.target.value as ExamLanguage)}>
-              {languages.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}
-            </select>
-          </Field>
+          <Field label="Titre de l'examen" error={errors.title}><input className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.title} onChange={(event) => update("title", event.target.value)} /></Field>
+          <Field label="Type d'examen" error={errors.type}><input className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.type} onChange={(event) => update("type", event.target.value)} /></Field>
+          <Field label="Niveau" error={errors.level}><select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.level} onChange={(event) => update("level", event.target.value as Level)}>{allLevels.map((level) => <option key={level}>{level}</option>)}</select></Field>
+          <Field label="Matière" error={errors.subject}><select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.subject} onChange={(event) => update("subject", event.target.value as Subject)}>{subjects.map((subject) => <option key={subject}>{subject}</option>)}</select></Field>
+          <Field label="Semestre" error={errors.semester}><select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.semester} onChange={(event) => update("semester", event.target.value as Semester)}>{semesters.map((semester) => <option key={semester}>{semester}</option>)}</select></Field>
+          <Field label="Langue" error={errors.language}><select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.language} onChange={(event) => update("language", event.target.value as ExamLanguage)}>{languages.map((language) => <option key={language.value} value={language.value}>{language.label}</option>)}</select></Field>
+          <div className="md:col-span-2"><Field label="Thèmes" error={errors.themes}><input className="focus-ring h-11 rounded-xl border border-brand-200 px-3" placeholder="Fractions, lecture, conjugaison…" value={form.themes} onChange={(event) => update("themes", event.target.value)} /></Field></div>
         </div>
       </section>
 
       <section className="grid gap-3">
-        <h2 className="text-lg font-bold text-brand-900">Paramètres de génération</h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Difficulté" error={errors.difficulty}>
-            <select className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.difficulty} onChange={(event) => update("difficulty", event.target.value as ExamDifficulty)}>
-              {difficulties.map((difficulty) => <option key={difficulty.value} value={difficulty.value}>{difficulty.label}</option>)}
-            </select>
-          </Field>
-          <Field label="Nombre de questions" error={errors.numberOfQuestions}>
-            <input type="number" min={1} max={20} className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.numberOfQuestions} onChange={(event) => update("numberOfQuestions", Number(event.target.value))} />
-          </Field>
-          <Field label="Durée en minutes" error={errors.durationMinutes}>
-            <input type="number" min={10} max={240} className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.durationMinutes} onChange={(event) => update("durationMinutes", Number(event.target.value))} />
-          </Field>
+        <h2 className="text-lg font-bold text-brand-900">Fichier de l'examen</h2>
+        {exam?.fileName && !file && <p className="text-sm text-stone-600">PDF actuel : <span className="font-semibold text-ink">{exam.fileName}</span>{exam.fileSize ? ` (${formatFileSize(exam.fileSize)})` : ""}</p>}
+        <div
+          role="button" tabIndex={0}
+          className={`focus-ring grid min-h-40 cursor-pointer place-items-center rounded-2xl border-2 border-dashed p-6 text-center transition ${isDragging ? "border-brand-500 bg-brand-50" : "border-brand-200 bg-white hover:bg-brand-50"}`}
+          onClick={() => fileInput.current?.click()}
+          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") fileInput.current?.click(); }}
+          onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={onDrop}
+        >
+          <div>
+            <p className="font-semibold text-brand-900">Glissez-déposez le fichier PDF ici ou cliquez pour sélectionner un fichier.</p>
+            <p className="mt-2 text-sm text-stone-500">PDF uniquement · 20 Mo maximum</p>
+            {file && <div className="mt-4 rounded-xl bg-brand-50 px-4 py-3"><p className="font-semibold text-ink">{file.name}</p><p className="text-sm text-stone-600">{formatFileSize(file.size)}</p></div>}
+          </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-          <Field label="Barème total" error={errors.totalScore}>
-            <input type="number" min={5} max={100} className="focus-ring h-11 rounded-xl border border-brand-200 px-3" value={form.totalScore} onChange={(event) => update("totalScore", Number(event.target.value))} />
-          </Field>
-          <Field label="Thèmes">
-            <input className="focus-ring h-11 rounded-xl border border-brand-200 px-3" placeholder="fractions, lecture, conjugaison..." value={form.topics} onChange={(event) => update("topics", event.target.value)} />
-          </Field>
-        </div>
-      </section>
-
-      <section className="grid gap-3">
-        <h2 className="text-lg font-bold text-brand-900">Types de questions</h2>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {questionTypes.map((type) => (
-            <label key={type.value} className={`flex h-11 items-center rounded-xl border px-3 text-sm font-semibold transition ${form.questionTypes.includes(type.value) ? "border-brand-500 bg-brand-50 text-brand-900" : "border-brand-200 bg-white text-stone-600"}`}>
-              <input className="mr-2" type="checkbox" checked={form.questionTypes.includes(type.value)} onChange={() => toggleQuestionType(type.value)} />
-              {type.label}
-            </label>
-          ))}
-        </div>
-        {errors.questionTypes && <p className="text-xs font-semibold text-red-700">{errors.questionTypes}</p>}
+        <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => selectFile(event.target.files?.[0])} />
+        {file && <div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" onClick={() => fileInput.current?.click()}>Remplacer le fichier</Button><Button type="button" variant="danger" onClick={() => setFile(null)}>Retirer le fichier</Button></div>}
+        {errors.file && <p className="text-sm font-semibold text-red-700">{errors.file}</p>}
       </section>
 
       <section className="grid gap-3">
         <h2 className="text-lg font-bold text-brand-900">Instructions</h2>
-        <Field label="Instructions supplémentaires">
-          <textarea rows={3} maxLength={1500} className="focus-ring rounded-xl border border-brand-200 px-3 py-2" value={form.additionalInstructions} onChange={(event) => update("additionalInstructions", event.target.value)} />
-        </Field>
+        <Field label="Instructions (facultatif)"><textarea rows={4} maxLength={1500} className="focus-ring rounded-xl border border-brand-200 px-3 py-2" placeholder="Ajoutez des informations utiles concernant le contenu de cet examen…" value={form.instructions} onChange={(event) => update("instructions", event.target.value)} /></Field>
       </section>
 
-      {apiError && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{apiError}</div>}
-
-      <section className="flex flex-col gap-4 border-t border-brand-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <label className="flex items-center gap-3 text-sm font-semibold">
-          <input type="checkbox" checked={form.active} onChange={(event) => update("active", event.target.checked)} />
-          Examen actif
+      <section className="grid gap-3">
+        <h2 className="text-lg font-bold text-brand-900">Remplacement de l'en-tête</h2>
+        <label className="flex items-center gap-3 text-sm font-semibold text-ink">
+          <input type="checkbox" checked={form.replaceLegacyHeader} onChange={(event) => update("replaceLegacyHeader", event.target.checked)} />
+          Remplacer l'ancien en-tête lors du téléchargement
         </label>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={() => navigate("/admin/exams")}>Annuler</Button>
-          <Button type="submit" disabled={isGenerating}>{isGenerating ? "Génération en cours..." : "Générer avec l'IA"}</Button>
-        </div>
+        <Field label={`Hauteur de l'ancien en-tête : ${Math.round(form.headerHeightRatio * 100)} %`}>
+          <input type="range" min={8} max={20} step={1} disabled={!form.replaceLegacyHeader} value={Math.round(form.headerHeightRatio * 100)} onChange={(event) => update("headerHeightRatio", Number(event.target.value) / 100)} className="accent-brand-600" />
+        </Field>
+        <label className="flex items-center gap-3 text-sm font-semibold text-ink">
+          <input type="checkbox" disabled={!form.replaceLegacyHeader} checked={form.applyHeaderToAllPages} onChange={(event) => update("applyHeaderToAllPages", event.target.checked)} />
+          Appliquer l'en-tête à toutes les pages
+        </label>
+      </section>
+
+      {submitError && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{submitError}</div>}
+      <section className="flex justify-end gap-2 border-t border-brand-100 pt-4">
+        <Button type="button" variant="secondary" disabled={isSaving} onClick={() => navigate("/admin/exams")}>Annuler</Button>
+        <Button type="submit" disabled={isSaving}>{isSaving ? "Enregistrement…" : "Enregistrer l'examen"}</Button>
       </section>
     </form>
   );
 };
 
 const Field = ({ label, error, children }: { label: string; error?: string; children: ReactNode }) => (
-  <label className="grid gap-1.5 text-sm font-semibold text-ink">
-    <span>{label}</span>
-    {children}
-    {error && <span className="text-xs font-semibold text-red-700">{error}</span>}
-  </label>
+  <label className="grid gap-1.5 text-sm font-semibold text-ink"><span>{label}</span>{children}{error && <span className="text-xs font-semibold text-red-700">{error}</span>}</label>
 );

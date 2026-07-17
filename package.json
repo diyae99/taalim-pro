@@ -5,17 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "jspdf": "latest",
-    "openai": "^6.47.0",
+    "pdf-lib": "^1.17.1",
     "react": "latest",
     "react-dom": "latest",
-    "react-router-dom": "latest",
-    "zod": "^4.4.3"
+    "react-router-dom": "latest"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
