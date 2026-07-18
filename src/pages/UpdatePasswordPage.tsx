@@ -13,12 +13,13 @@ export const UpdatePasswordPage = () => {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { session, loading, isRecoverySession, logout } = useAuth();
+  const { session, user, loading, isRecoverySession, logout } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
   if (loading) return <><Navbar /><Loading /></>;
-  if (!session || !isRecoverySession) return <><Navbar /><main className="mx-auto max-w-md px-4 py-16"><Card><h1 className="text-xl font-bold text-brand-900">Lien invalide ou expiré</h1><p className="mt-3 text-sm text-stone-600">Demandez un nouveau lien de réinitialisation pour continuer.</p><Link className="mt-5 inline-block text-sm font-bold text-brand-700" to="/forgot-password">Demander un nouveau lien</Link></Card></main></>;
+  const forcedChange = Boolean(session && user?.role === "teacher" && user.status === "active" && user.mustChangePassword);
+  if (!session || (!isRecoverySession && !forcedChange)) return <><Navbar /><main className="mx-auto max-w-md px-4 py-16"><Card><h1 className="text-xl font-bold text-brand-900">Lien invalide ou expiré</h1><p className="mt-3 text-sm text-stone-600">Demandez un nouveau lien de réinitialisation pour continuer.</p><Link className="mt-5 inline-block text-sm font-bold text-brand-700" to="/forgot-password">Demander un nouveau lien</Link></Card></main></>;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

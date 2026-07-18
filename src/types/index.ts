@@ -17,6 +17,7 @@ export interface User {
   logo?: string;
   role: Role;
   status: UserStatus;
+  mustChangePassword?: boolean;
   createdAt: string;
 }
 
@@ -29,6 +30,7 @@ export interface TrustedAuthProfile {
   phone?: string;
   role: TrustedProfileRole;
   accountStatus: UserStatus;
+  mustChangePassword: boolean;
 }
 
 export interface Exam {

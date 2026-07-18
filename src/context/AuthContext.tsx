@@ -8,12 +8,14 @@ interface AuthResult {
   ok: boolean;
   message?: string;
   user?: User;
+  error?: unknown;
 }
 
 interface RegistrationData {
   email: string;
   password: string;
   metadata: Record<string, string>;
+  logoFile?: File | null;
 }
 
 interface AuthContextValue {
@@ -37,6 +39,7 @@ type ProfileRow = {
   phone: string | null;
   role: string;
   account_status: string;
+  must_change_password: boolean;
 };
 
 const validRoles: TrustedProfileRole[] = ["platform_admin", "teacher"];
@@ -51,7 +54,8 @@ const safeProfile = (row: ProfileRow): TrustedAuthProfile | null => {
     email: row.email,
     phone: row.phone ?? undefined,
     role: row.role as TrustedProfileRole,
-    accountStatus: row.account_status as UserStatus
+    accountStatus: row.account_status as UserStatus,
+    mustChangePassword: row.must_change_password
   };
 };
 
@@ -69,6 +73,7 @@ const buildAppUser = (profile: TrustedAuthProfile, authUser: SupabaseUser): User
     logo: typeof metadata.logo_data_url === "string" ? metadata.logo_data_url : undefined,
     role: profile.role,
     status: profile.accountStatus,
+    mustChangePassword: profile.mustChangePassword,
     createdAt: authUser.created_at
   };
 };
@@ -78,6 +83,31 @@ const loginErrorMessage = (error: { code?: string; message?: string }) => {
   if (error.code === "email_not_confirmed") return "Votre adresse email n'a pas encore été confirmée.";
   if (error.message?.toLowerCase().includes("fetch")) return "Impossible de contacter le service. Vérifiez votre connexion internet.";
   return "Une erreur inattendue est survenue pendant la connexion.";
+};
+
+const registrationErrorMessage = (error: { code?: string; message?: string; status?: number }) => {
+  const message = error.message?.toLowerCase() ?? "";
+  if (error.code === "user_already_exists" || message.includes("already registered") || message.includes("already exists")) {
+    return "Un compte existe déjà avec cette adresse email.";
+  }
+  if (error.code === "request_entity_too_large" || error.status === 413) {
+    return "Les données envoyées sont trop volumineuses. Veuillez choisir un logo plus léger.";
+  }
+  if (error.code === "over_email_send_rate_limit" || error.status === 429) {
+    return "Trop de demandes ont été envoyées. Veuillez patienter quelques minutes avant de réessayer.";
+  }
+  if (message.includes("password")) return "Le mot de passe ne respecte pas les exigences de sécurité.";
+  if (message.includes("email") && message.includes("invalid")) return "L’adresse e-mail saisie n’est pas valide.";
+  if (error.code === "unexpected_failure" || error.status === 500) {
+    return "Le service d’inscription n’a pas pu envoyer l’e-mail de confirmation. Veuillez contacter l’administrateur.";
+  }
+  if (message.includes("fetch") || message.includes("network")) return "Impossible de contacter le service. Vérifiez votre connexion internet.";
+  return error.message ? `Supabase a refusé l’inscription : ${error.message}` : "Impossible de créer le compte pour le moment.";
+};
+
+const safeStorageName = (fileName: string) => {
+  const extension = fileName.toLowerCase().endsWith(".png") ? "png" : "jpg";
+  return `logo-${Date.now()}.${extension}`;
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -117,7 +147,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, email, phone, role, account_status")
+      .select("id, full_name, email, phone, role, account_status, must_change_password")
       .eq("id", userData.user.id)
       .maybeSingle<ProfileRow>();
     if (currentRequest !== requestId.current) return null;
@@ -173,32 +203,97 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       const trustedProfile = await loadTrustedProfile(data.session);
       if (!trustedProfile) return { ok: false, message: "Ce compte n'est pas autorisé à accéder à l'application." };
-      return { ok: true, user: buildAppUser(trustedProfile, data.user) };
+      const appUser = buildAppUser(trustedProfile, data.user);
+      if (trustedProfile.accountStatus !== "active") {
+        await supabase.auth.signOut();
+        clearAuthState();
+        setLoading(false);
+        return { ok: true, user: appUser };
+      }
+      return { ok: true, user: appUser };
     } catch {
       setLoading(false);
       return { ok: false, message: "Impossible de contacter le service. Vérifiez votre connexion internet." };
     }
-  }, [loadTrustedProfile]);
+  }, [clearAuthState, loadTrustedProfile]);
 
-  const register = useCallback(async ({ email, password, metadata }: RegistrationData): Promise<AuthResult> => {
+  const register = useCallback(async ({ email, password, metadata, logoFile }: RegistrationData): Promise<AuthResult> => {
     try {
-      const { error } = await supabase.auth.signUp({
+      console.log("REGISTER_STEP", "supabase.auth.signUp");
+      const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: metadata, emailRedirectTo: `${window.location.origin}/account-pending` }
+        options: { data: metadata }
       });
       if (error) {
-        if (error.code === "user_already_exists") return { ok: false, message: "Un compte existe déjà avec cette adresse email." };
-        if (error.message.toLowerCase().includes("password")) return { ok: false, message: "Le mot de passe doit contenir au moins 8 caractères." };
-        if (error.message.toLowerCase().includes("fetch")) return { ok: false, message: "Impossible de contacter le service. Vérifiez votre connexion internet." };
-        return { ok: false, message: "Impossible de créer le compte pour le moment." };
+        console.error("REGISTER_SUPABASE_AUTH_ERROR", error);
+        return { ok: false, message: registrationErrorMessage(error), error };
+      }
+      if (!data.user) {
+        const missingUserError = new Error("Supabase signUp did not return a user");
+        console.error("REGISTER_SUPABASE_AUTH_ERROR", missingUserError);
+        return { ok: false, message: "Supabase n’a pas retourné le compte créé. Veuillez réessayer.", error: missingUserError };
+      }
+
+      if (!data.session) {
+        const missingSessionError = new Error("Supabase signUp did not return a session");
+        console.error("REGISTER_SUPABASE_CONFIGURATION_ERROR", missingSessionError);
+        return {
+          ok: false,
+          message: "L’inscription attend encore une confirmation par e-mail. Désactivez « Confirm email » dans la configuration Supabase.",
+          error: missingSessionError
+        };
+      }
+
+      console.log("REGISTER_STEP", "profiles verification");
+      const { data: createdProfile, error: profileVerificationError } = await supabase
+        .from("profiles")
+        .select("id, role, account_status")
+        .eq("id", data.user.id)
+        .maybeSingle<{ id: string; role: string; account_status: string }>();
+      if (profileVerificationError || !createdProfile) {
+        console.error("REGISTER_PROFILE_VERIFICATION_ERROR", profileVerificationError);
+        await supabase.auth.signOut();
+        clearAuthState();
+        setLoading(false);
+        return { ok: false, message: "Le compte Auth a été créé, mais son profil n’a pas pu être vérifié. Contactez l’administrateur.", error: profileVerificationError };
+      }
+      if (createdProfile.role !== "teacher" || createdProfile.account_status !== "pending") {
+        const invalidProfileError = new Error("Unexpected registration authorization values");
+        console.error("REGISTER_PROFILE_AUTHORIZATION_ERROR", invalidProfileError, createdProfile);
+        await supabase.auth.signOut();
+        clearAuthState();
+        setLoading(false);
+        return { ok: false, message: "Le profil créé ne respecte pas les règles d’autorisation. Contactez l’administrateur.", error: invalidProfileError };
+      }
+
+      let logoMessage: string | undefined;
+      if (logoFile) {
+        console.log("REGISTER_STEP", "teacher-logos upload");
+        const logoPath = `${data.user.id}/${safeStorageName(logoFile.name)}`;
+        const { error: uploadError } = await supabase.storage.from("teacher-logos").upload(logoPath, logoFile, {
+          contentType: logoFile.type,
+          upsert: false
+        });
+        if (uploadError) {
+          console.error("REGISTER_LOGO_UPLOAD_ERROR", uploadError);
+          logoMessage = "Le compte a été créé, mais le logo n’a pas pu être enregistré. Vous pourrez l’ajouter plus tard.";
+        } else {
+          console.log("REGISTER_STEP", "profiles avatar_path update");
+          const { error: profileError } = await supabase.from("profiles").update({ avatar_path: logoPath }).eq("id", data.user.id);
+          if (profileError) {
+            console.error("REGISTER_PROFILE_UPDATE_ERROR", profileError);
+            logoMessage = "Le compte et le logo ont été créés, mais le profil n’a pas pu être associé au logo.";
+          }
+        }
       }
       await supabase.auth.signOut();
       clearAuthState();
       setLoading(false);
-      return { ok: true };
-    } catch {
-      return { ok: false, message: "Impossible de contacter le service. Vérifiez votre connexion internet." };
+      return { ok: true, message: logoMessage ?? "Votre demande a été enregistrée et attend la validation de l’administrateur." };
+    } catch (error) {
+      console.error("REGISTER_SUPABASE_UNEXPECTED_ERROR", error);
+      return { ok: false, message: registrationErrorMessage(error instanceof Error ? error : {}), error };
     }
   }, [clearAuthState]);
 

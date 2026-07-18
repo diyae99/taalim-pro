@@ -6,12 +6,14 @@ import { Card } from "../components/Card";
 import { Navbar } from "../components/Navbar";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import type { User } from "../types";
 
-const destinationFor = (role: "platform_admin" | "teacher", status: string) => {
-  if (status === "pending") return "/account-pending";
-  if (status === "suspended") return "/account-suspended";
-  if (status === "rejected") return "/account-rejected";
-  return role === "platform_admin" ? "/admin" : "/dashboard";
+const destinationFor = (user: User) => {
+  if (user.status === "pending") return "/account-pending";
+  if (user.status === "suspended") return "/account-suspended";
+  if (user.status === "rejected") return "/account-rejected";
+  if (user.role === "teacher" && user.mustChangePassword) return "/update-password";
+  return user.role === "platform_admin" ? "/admin" : "/dashboard";
 };
 
 export const LoginPage = () => {
@@ -32,7 +34,7 @@ export const LoginPage = () => {
       showToast(result.message ?? "Connexion impossible.", "error");
       return;
     }
-    navigate(destinationFor(result.user.role, result.user.status), { replace: true });
+    navigate(destinationFor(result.user), { replace: true });
   };
 
   return (

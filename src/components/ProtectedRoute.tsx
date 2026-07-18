@@ -19,6 +19,7 @@ export const PublicOnlyRoute = () => {
   if (profileUnavailable || !user) return <Navigate to="/unauthorized" replace />;
   const restrictedPath = statusPath(user);
   if (restrictedPath) return <Navigate to={restrictedPath} replace />;
+  if (user.role === "teacher" && user.mustChangePassword) return <Navigate to="/update-password" replace />;
   return <Navigate to={user.role === "platform_admin" ? "/admin" : "/dashboard"} replace />;
 };
 
@@ -30,6 +31,7 @@ export const ProtectedRoute = () => {
   const restrictedPath = statusPath(user);
   if (restrictedPath) return <Navigate to={restrictedPath} replace />;
   if (user.role !== "teacher" || user.status !== "active") return <Navigate to="/unauthorized" replace />;
+  if (user.mustChangePassword) return <Navigate to="/update-password" replace />;
   return <Outlet />;
 };
 

@@ -64,7 +64,7 @@ export const UserTable = ({ users, busyUserId, onStatus, onPasswordReset, onView
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       <Button variant="secondary" disabled={busy} onClick={() => onView(user)}>Voir</Button>
-                      {user.status === "pending" && <><Button disabled={busy} onClick={() => onStatus(user, "active")}>Approuver</Button><Button variant="danger" disabled={busy} onClick={() => onStatus(user, "rejected")}>Rejeter</Button></>}
+                      {user.status === "pending" && <><Button disabled={busy} onClick={() => onStatus(user, "active")}>Activer</Button><Button variant="danger" disabled={busy} onClick={() => onStatus(user, "rejected")}>Rejeter</Button></>}
                       {user.status === "active" && <Button variant="danger" disabled={busy} onClick={() => onStatus(user, "suspended")}>Suspendre</Button>}
                       {user.status === "suspended" && <Button disabled={busy} onClick={() => onStatus(user, "active")}>Réactiver</Button>}
                       {user.status === "rejected" && <Button disabled={busy} onClick={() => onStatus(user, "active")}>Réexaminer et approuver</Button>}
