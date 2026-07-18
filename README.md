@@ -48,4 +48,4 @@ After linking a Supabase project and migrating authentication to Supabase Auth, 
 supabase db push
 ```
 
-Admin users must have `app_metadata.role = "admin"`. The migration creates a private `exam-files` bucket with a 20 MB limit and `application/pdf` as its only accepted MIME type. Never expose a service-role key in the frontend.
+Administrative access is determined by `public.profiles.role = 'platform_admin'`; frontend authorization never trusts editable user metadata. The migration creates a private `exam-files` bucket with a 20 MB limit and `application/pdf` as its only accepted MIME type. Never expose a service-role key in the frontend.

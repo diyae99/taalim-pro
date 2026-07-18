@@ -16,7 +16,7 @@ const adminLinks = [
 
 export const Sidebar = () => {
   const { user } = useAuth();
-  const links = user?.role === "admin" ? adminLinks : clientLinks;
+  const links = user?.role === "platform_admin" ? adminLinks : clientLinks;
 
   return (
     <aside className="rounded-2xl border border-brand-100 bg-white p-3 shadow-soft lg:sticky lg:top-20">

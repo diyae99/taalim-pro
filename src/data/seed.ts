@@ -1,22 +1,6 @@
-import type { Exam, User } from "../types";
+import type { Exam } from "../types";
 
 const now = new Date().toISOString();
-
-const adminEmail = import.meta.env.VITE_DEFAULT_ADMIN_EMAIL || "admin@taalimpro.ma";
-const adminPassword = import.meta.env.VITE_DEFAULT_ADMIN_PASSWORD || "admin123";
-
-export const adminUser: User = {
-  id: "admin-1",
-  fullName: "Administrateur Taalim Pro",
-  email: adminEmail,
-  phone: "0600000000",
-  schoolName: "Taalim Pro",
-  city: "Casablanca",
-  password: adminPassword,
-  role: "admin",
-  status: "active",
-  createdAt: now
-};
 
 export const sampleExams: Exam[] = [
   {

@@ -6,9 +6,9 @@ export const Navbar = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const onLogout = () => {
-    logout();
-    navigate("/login");
+  const onLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -20,12 +20,12 @@ export const Navbar = () => {
         </Link>
         <nav className="hidden items-center gap-5 text-sm font-medium text-ink md:flex">
           <NavLink to="/" className={({ isActive }) => (isActive ? "text-brand-700" : "hover:text-brand-700")}>Accueil</NavLink>
-          {user?.role === "client" && <NavLink to="/dashboard" className="hover:text-brand-700">Espace client</NavLink>}
-          {user?.role === "admin" && <NavLink to="/admin" className="hover:text-brand-700">Admin</NavLink>}
+          {user?.role === "teacher" && <NavLink to="/dashboard" className="hover:text-brand-700">Espace client</NavLink>}
+          {user?.role === "platform_admin" && <NavLink to="/admin" className="hover:text-brand-700">Admin</NavLink>}
         </nav>
         <div className="flex items-center gap-2">
           {user ? (
-            <Button variant="secondary" onClick={onLogout}>Déconnexion</Button>
+            <Button variant="secondary" onClick={() => void onLogout()}>Déconnexion</Button>
           ) : (
             <>
               <Link to="/login"><Button variant="ghost">Connexion</Button></Link>

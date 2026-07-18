@@ -1,5 +1,5 @@
-export type Role = "admin" | "client";
-export type UserStatus = "pending" | "active" | "suspended";
+export type Role = "teacher" | "platform_admin";
+export type UserStatus = "pending" | "active" | "suspended" | "rejected";
 export type Level = "PS" | "MS" | "GS" | "CP" | "CE1" | "CE2" | "CM1" | "CM2" | "CE6";
 export type Semester = "Premier semestre" | "Deuxième semestre";
 export type Subject = "Français" | "Arabe" | "Mathématiques" | "Activité scientifique" | "Éducation islamique";
@@ -15,10 +15,20 @@ export interface User {
   schoolLevel?: string;
   schoolSubject?: string;
   logo?: string;
-  password: string;
   role: Role;
   status: UserStatus;
   createdAt: string;
+}
+
+export type TrustedProfileRole = Role;
+
+export interface TrustedAuthProfile {
+  id: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  role: TrustedProfileRole;
+  accountStatus: UserStatus;
 }
 
 export interface Exam {
